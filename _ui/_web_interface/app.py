@@ -19,13 +19,12 @@
 # - coding: utf-8 -*-
 
 # isort: off
-from maindash import app
+from maindash import app, spectrum_fig, waterfall_fig, web_interface
 
 # isort: on
 
-import asyncio
-
 import kraken_ws_server
+from utils import fetch_dsp_data, fetch_gps_data
 from views import main
 
 app.layout = main.layout
@@ -33,15 +32,17 @@ app.layout = main.layout
 # It is workaround for splitting callbacks in separate files (run callbacks after layout)
 from callbacks import display_page, main, update_daq_params  # noqa: F401
 
-# Register /ws/kraken on the underlying Quart server
-kraken_ws_server.register_ws_route(app.server)
+# Start the standalone WebSocket server on its own port/thread immediately.
+# This is independent of dash_devices so clients can connect and receive data
+# without any browser ever opening the GUI.
+kraken_ws_server.start_server(host="0.0.0.0", port=8082)
 
-
-@app.server.before_serving
-async def _capture_event_loop():
-    """Store the running event loop so worker threads can schedule WS broadcasts."""
-    kraken_ws_server._event_loop = asyncio.get_event_loop()
-
+# Start the data-pump timers unconditionally at module load time.
+# Previously these only started when the first browser client connected
+# (callback_connect).  Starting them here ensures the signal-processor queue
+# is always drained and WebSocket broadcasts always flow.
+fetch_dsp_data(app, web_interface, spectrum_fig, waterfall_fig)
+fetch_gps_data(app, web_interface)
 
 if __name__ == "__main__":
     # Debug mode does not work when the data interface is set to shared-memory

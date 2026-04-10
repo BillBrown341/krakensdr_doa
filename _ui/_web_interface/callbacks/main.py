@@ -46,12 +46,11 @@ from variables import (
 # ============================================
 @app.callback_connect
 def func(client, connect):
-    if connect and len(app.clients) == 1:
-        fetch_dsp_data(app, web_interface, spectrum_fig, waterfall_fig)
-        fetch_gps_data(app, web_interface)
-    elif not connect and len(app.clients) == 0:
-        web_interface.dsp_timer.cancel()
-        web_interface.gps_timer.cancel()
+    # fetch_dsp_data and fetch_gps_data are started unconditionally at Quart
+    # startup (app.py before_serving hook) so that WebSocket clients receive
+    # data regardless of whether any browser has the GUI open.  Do not start
+    # or stop the timers here.
+    pass
 
 
 @app.callback_shared(

@@ -354,9 +354,12 @@ class WebInterface:
         with open(settings_file_path, "w") as outfile:
             json.dump(data, outfile, indent=2)
 
-        kraken_ws_server.broadcast_from_thread(
-            {"type": "settings", "timestamp": int(time.time() * 1000), **data}
-        )
+        ws_payload = {"type": "settings", "timestamp": int(time.time() * 1000), **data}
+        # Update the cache synchronously first — this works even at startup
+        # before the event loop exists, ensuring new WS clients always get a
+        # settings snapshot immediately on connect.
+        kraken_ws_server.cache_settings(ws_payload)
+        kraken_ws_server.broadcast_from_thread(ws_payload)
 
     def load_default_configuration(self):
         data = {}
