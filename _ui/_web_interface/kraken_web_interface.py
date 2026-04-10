@@ -3,6 +3,7 @@ import logging
 import queue
 import time
 
+import kraken_ws_server
 import numpy as np
 
 # isort: off
@@ -352,6 +353,10 @@ class WebInterface:
 
         with open(settings_file_path, "w") as outfile:
             json.dump(data, outfile, indent=2)
+
+        kraken_ws_server.broadcast_from_thread(
+            {"type": "settings", "timestamp": int(time.time() * 1000), **data}
+        )
 
     def load_default_configuration(self):
         data = {}

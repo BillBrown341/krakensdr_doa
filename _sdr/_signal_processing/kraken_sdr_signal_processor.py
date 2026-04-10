@@ -789,6 +789,30 @@ class SignalProcessor(threading.Thread):
                                 max_power_level_str,
                             )
 
+                        # WebSocket broadcast — one message per VFO, works for all output formats
+                        try:
+                            import kraken_ws_server as _ws
+                            for j, freq in enumerate(self.freq_list):
+                                _doa_log = self.doa_result_log_list[j] + np.abs(
+                                    np.min(self.doa_result_log_list[j])
+                                )
+                                _ws.broadcast_from_thread({
+                                    "type": "doa",
+                                    "timestamp": self.timestamp,
+                                    "bearing": 360 - self.theta_0_list[j],
+                                    "confidence": float(self.confidence_list[j]),
+                                    "power_db": float(self.max_power_level_list[j]),
+                                    "freq_hz": freq,
+                                    "antenna_arrangement": self.DOA_ant_alignment,
+                                    "latency_ms": self.latency,
+                                    "station_id": self.station_id,
+                                    "latitude": self.latitude,
+                                    "longitude": self.longitude,
+                                    "doa_spectrum": _doa_log.tolist(),
+                                })
+                        except Exception:
+                            pass
+
                         DOA_str = f"{self.theta_0_list[0]}"
                         confidence_str = f"{np.max(self.confidence_list[0]):.2f}"
                         max_power_level_str = f"{np.maximum(-100, self.max_power_level_list[0]):.1f}"

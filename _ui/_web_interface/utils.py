@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import queue
+import time
 from configparser import ConfigParser
 from math import inf
 from threading import Timer
@@ -179,6 +180,24 @@ def fetch_dsp_data(app, web_interface, spectrum_fig, waterfall_fig):
                 web_interface.logger.debug("Spectrum data fetched from signal processing que")
                 spectrum_update_flag = 1
                 web_interface.spectrum = data_entry[1]
+                # WebSocket broadcast — always fires, not gated on the Dash UI page
+                try:
+                    import kraken_ws_server as _ws
+                    M = web_interface.module_receiver.M
+                    freq_axis = (
+                        web_interface.spectrum[0, :] + web_interface.daq_center_freq * 10**6
+                    ).tolist()
+                    channels = {
+                        f"ch{m}": web_interface.spectrum[m + 1, :].tolist() for m in range(M)
+                    }
+                    _ws.broadcast_from_thread({
+                        "type": "spectrum",
+                        "timestamp": int(time.time() * 1000),
+                        "freq_axis": freq_axis,
+                        "channels": channels,
+                    })
+                except Exception:
+                    pass
             elif data_entry[0] == "doa_thetas":
                 web_interface.doa_thetas = data_entry[1]
                 doa_update_flag = 1
