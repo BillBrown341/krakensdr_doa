@@ -26,6 +26,20 @@ from variables import (
 RED_COLOR = {"color": "#e74c3c"}
 
 
+def _safe_push(app, mods: dict) -> None:
+    """Call app.push_mods() and silently swallow the 'before run_server' race.
+
+    On slow hardware (Pi 4) the 3-second startup timer in app.py can fire
+    before dash_devices has finished its run_server() setup.  Rather than
+    crashing the timer thread, we skip the push — the next timer tick (10 ms
+    for fetch_dsp_data, 1 s for fetch_gps_data) will retry successfully.
+    """
+    try:
+        app.push_mods(mods)
+    except Exception:
+        pass
+
+
 def read_config_file_dict(config_fname=daq_config_filename):
     parser = ConfigParser()
     found = parser.read([config_fname])
@@ -220,11 +234,7 @@ def fetch_dsp_data(app, web_interface, spectrum_fig, waterfall_fig):
                 web_interface.squelch_update = data_entry[1].copy()
             elif data_entry[0] == "VFO-0 Frequency":
                 if app is not None:
-                    app.push_mods(
-                        {
-                            "vfo_0_freq": {"value": data_entry[1] * HZ_TO_MHZ},
-                        }
-                    )
+                    _safe_push(app, {"vfo_0_freq": {"value": data_entry[1] * HZ_TO_MHZ}})
             else:
                 web_interface.logger.warning("Unknown data entry: {:s}".format(data_entry[0]))
     except queue.Empty:
@@ -252,13 +262,11 @@ def fetch_dsp_data(app, web_interface, spectrum_fig, waterfall_fig):
 
 def fetch_gps_data(app, web_interface):
     if app is not None:
-        app.push_mods(
-            {
-                "body_gps_latitude": {"children": web_interface.module_signal_processor.latitude},
-                "body_gps_longitude": {"children": web_interface.module_signal_processor.longitude},
-                "body_gps_heading": {"children": web_interface.module_signal_processor.heading},
-            }
-        )
+        _safe_push(app, {
+            "body_gps_latitude": {"children": web_interface.module_signal_processor.latitude},
+            "body_gps_longitude": {"children": web_interface.module_signal_processor.longitude},
+            "body_gps_heading": {"children": web_interface.module_signal_processor.heading},
+        })
 
     web_interface.gps_timer = Timer(1, fetch_gps_data, args=(app, web_interface))
     web_interface.gps_timer.start()
@@ -552,46 +560,42 @@ def update_daq_status(app, web_interface):
         gps_en_str = web_interface.module_signal_processor.gps_status
         gps_en_str_style = {"color": "#e74c3c"}
 
-    app.push_mods(
-        {
-            "body_daq_update_rate": {"children": daq_update_rate_str},
-            "body_daq_dsp_latency": {"children": daq_dsp_latency},
-            "body_daq_frame_index": {"children": daq_frame_index_str},
-            "body_daq_frame_sync": {"children": daq_frame_sync_str},
-            "body_daq_frame_type": {"children": daq_frame_type_str},
-            "body_daq_power_level": {"children": daq_power_level_str},
-            "body_daq_conn_status": {"children": daq_conn_status_str},
-            "body_daq_delay_sync": {"children": daq_delay_sync_str},
-            "body_daq_iq_sync": {"children": daq_iq_sync_str},
-            "body_daq_noise_source": {"children": daq_noise_source_str},
-            "body_daq_rf_center_freq": {"children": daq_rf_center_freq_str},
-            "body_daq_sampling_freq": {"children": daq_sampling_freq_str},
-            "body_dsp_decimated_bw": {"children": dsp_decimated_bw_str},
-            "body_vfo_range": {"children": vfo_range_str},
-            "body_daq_cpi": {"children": daq_cpi_str},
-            "body_daq_if_gain": {"children": web_interface.daq_if_gains},
-            "body_max_amp": {"children": daq_max_amp_str},
-            "body_avg_powers": {"children": daq_avg_powers_str},
-            "gps_status": {"children": gps_en_str},
-        }
-    )
+    _safe_push(app, {
+        "body_daq_update_rate": {"children": daq_update_rate_str},
+        "body_daq_dsp_latency": {"children": daq_dsp_latency},
+        "body_daq_frame_index": {"children": daq_frame_index_str},
+        "body_daq_frame_sync": {"children": daq_frame_sync_str},
+        "body_daq_frame_type": {"children": daq_frame_type_str},
+        "body_daq_power_level": {"children": daq_power_level_str},
+        "body_daq_conn_status": {"children": daq_conn_status_str},
+        "body_daq_delay_sync": {"children": daq_delay_sync_str},
+        "body_daq_iq_sync": {"children": daq_iq_sync_str},
+        "body_daq_noise_source": {"children": daq_noise_source_str},
+        "body_daq_rf_center_freq": {"children": daq_rf_center_freq_str},
+        "body_daq_sampling_freq": {"children": daq_sampling_freq_str},
+        "body_dsp_decimated_bw": {"children": dsp_decimated_bw_str},
+        "body_vfo_range": {"children": vfo_range_str},
+        "body_daq_cpi": {"children": daq_cpi_str},
+        "body_daq_if_gain": {"children": web_interface.daq_if_gains},
+        "body_max_amp": {"children": daq_max_amp_str},
+        "body_avg_powers": {"children": daq_avg_powers_str},
+        "gps_status": {"children": gps_en_str},
+    })
 
-    app.push_mods(
-        {
-            "body_daq_frame_sync": {"style": frame_sync_style},
-            "body_daq_frame_type": {"style": frame_type_style},
-            "body_daq_power_level": {"style": daq_power_level_style},
-            "body_daq_conn_status": {"style": conn_status_style},
-            "body_daq_delay_sync": {"style": delay_sync_style},
-            "body_daq_iq_sync": {"style": iq_sync_style},
-            "body_daq_noise_source": {"style": noise_source_style},
-            "gps_status": {"style": gps_en_str_style},
-        }
-    )
+    _safe_push(app, {
+        "body_daq_frame_sync": {"style": frame_sync_style},
+        "body_daq_frame_type": {"style": frame_type_style},
+        "body_daq_power_level": {"style": daq_power_level_style},
+        "body_daq_conn_status": {"style": conn_status_style},
+        "body_daq_delay_sync": {"style": delay_sync_style},
+        "body_daq_iq_sync": {"style": iq_sync_style},
+        "body_daq_noise_source": {"style": noise_source_style},
+        "gps_status": {"style": gps_en_str_style},
+    })
 
     # Update local recording file size
     recording_file_size = web_interface.module_signal_processor.get_recording_filesize()
-    app.push_mods({"body_file_size": {"children": recording_file_size}})
+    _safe_push(app, {"body_file_size": {"children": recording_file_size}})
 
 
 def get_agc_warning_style_from_gain(gain):
