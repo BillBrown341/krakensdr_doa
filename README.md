@@ -152,28 +152,130 @@ After starting the script a web based server opens at port number `8080`, which 
 ![image](https://user-images.githubusercontent.com/78108016/175924475-2ce0a189-e119-4442-8893-0d32404847e2.png)
 
 
-### Remote control
+### Headless Mode
 
-The `settings.json` file that contains most of the DoA DSP settings is served via HTTP and can be accessed via `http://KRAKEN_IP:8081/settings.json`. Not only the client can download it on the remote machine, but also upload `settings.json` to the host that runs DSP software via, e.g.,
+The application can run entirely without the web GUI. In headless mode the Dash server (port 8080) and file server (port 8081) are not started — the WebSocket on port 8082 is the sole interface for both receiving data and sending commands.
 
 ```bash
+./gui_run.sh --headless
+```
+
+Data streams and commands work identically to GUI mode. The GUI can still be opened later by restarting without `--headless`.
+
+### WebSocket Interface
+
+All data output and remote control is available via a single WebSocket endpoint:
+
+```
+ws://KRAKEN_IP:8082/ws/kraken
+```
+
+No authentication is required. On connect, the server immediately pushes the current settings snapshot.
+
+#### Outbound messages (server → client)
+
+Every message is a JSON object with a `type` field and a `timestamp` (epoch milliseconds):
+
+```
+{ "type": "settings", "timestamp": 1714000000000, "center_freq": 416.588, ... }
+{ "type": "doa",      "timestamp": 1714000000000, "doa_max": 135.0, ... }
+{ "type": "spectrum", "timestamp": 1714000000000, "freq_axis": [...], "channels": { "ch0": [...] } }
+```
+
+#### Inbound commands (client → server)
+
+Send a JSON object to update any combination of settings. Only the keys you include are changed — the rest are preserved.
+
+```json
+{
+  "type": "command",
+  "action": "update_settings",
+  "data": {
+    "center_freq": 433.92,
+    "uniform_gain": 20.0
+  }
+}
+```
+
+Changes apply immediately to the signal processor. If the GUI is open, all form fields update automatically within one second.
+
+#### Settings reference
+
+| Key | Type | Valid values / range | Default |
+|-----|------|----------------------|---------|
+| `center_freq` | float (MHz) | ≥ 24.0 | `416.588` |
+| `uniform_gain` | float (dB) or string | `0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9, 25.4, 28.0, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5, 48.0, 49.6` or `"Auto"` | `15.7` |
+| `data_interface` | string | `"shmem"`, `"eth"` | `"shmem"` |
+| `default_ip` | string | Any IP address | `"0.0.0.0"` |
+| **DoA** | | | |
+| `en_doa` | bool | `true`, `false` | `true` |
+| `ant_arrangement` | string | `"UCA"`, `"ULA"`, `"Custom"` | `"UCA"` |
+| `ula_direction` | string | `"Both"`, `"Forward"`, `"Backward"` | `"Both"` |
+| `ant_spacing_meters` | float (m) | ≥ 0.001 | `0.21` |
+| `custom_array_x_meters` | string | Comma-separated floats, one per channel | `"0.21,0.06,-0.17,-0.17,0.07"` |
+| `custom_array_y_meters` | string | Comma-separated floats, one per channel | `"0.00,-0.20,-0.12,0.12,0.20"` |
+| `array_offset` | int (degrees) | Any integer | `0` |
+| `doa_method` | string | `"Bartlett"`, `"Capon"`, `"MEM"`, `"TNA"`, `"MUSIC"`, `"ROOT-MUSIC"` | `"MUSIC"` |
+| `doa_decorrelation_method` | string | `"Off"`, `"FBA"`, `"TOEP"`, `"FBSS"`, `"FBTOEP"` | `"Off"` |
+| `expected_num_of_sources` | int | `1`, `2`, `3`, `4` | `1` |
+| `compass_offset` | int (degrees) | Any integer | `0` |
+| `doa_fig_type` | string | `"Linear"`, `"Polar"`, `"Compass"` | `"Linear"` |
+| `en_peak_hold` | bool | `true`, `false` | `false` |
+| **Station** | | | |
+| `station_id` | string | Any string | `"NOCALL"` |
+| `location_source` | string | `"None"`, `"Static"`, `"gpsd"` | `"None"` |
+| `latitude` | float | -90.0 to 90.0 | `0.0` |
+| `longitude` | float | -180.0 to 180.0 | `0.0` |
+| `heading` | float (degrees) | 0.0 to 360.0 | `0.0` |
+| `gps_fixed_heading` | bool | `true`, `false` | `false` |
+| `gps_min_speed` | float (m/s) | > 0 | `2` |
+| `gps_min_speed_duration` | int (s) | > 0 | `3` |
+| `doa_data_format` | string | `"Kraken App"`, `"Kraken Pro Local"`, `"Kraken Pro Remote"`, `"Kerberos App"`, `"DF Aggregator"`, `"RDF Mapper"`, `"Full POST"` | `"Kraken App"` |
+| `krakenpro_key` | string | Any string | — |
+| `mapping_server_url` | string | WebSocket URL | `"wss://map.krakenrf.com:2096"` |
+| `rdf_mapper_server` | string | HTTP URL | — |
+| **VFO** | | | |
+| `spectrum_calculation` | string | `"Single"`, `"All"` | `"Single"` |
+| `vfo_mode` | string | `"Standard"`, `"Auto"` | `"Standard"` |
+| `active_vfos` | int | 1 – 16 | `1` |
+| `output_vfo` | int | -1 (all), 0 – 15 | `0` |
+| `dsp_decimation` | int | ≥ 1 | `1` |
+| `vfo_default_squelch_mode` | string | `"Auto"`, `"Manual"`, `"Auto Channel"` | `"Auto"` |
+| `vfo_default_demod` | string | `"None"`, `"FM"` | `"None"` |
+| `vfo_default_iq` | string | `"False"`, `"True"` | `"False"` |
+| `max_demod_timeout` | int (s) | > 0 | `60` |
+| `en_optimize_short_bursts` | bool | `true`, `false` | `false` |
+| **Per-VFO** (replace `N` with 0–15) | | | |
+| `vfo_freq_N` | float (Hz) | Within tuned bandwidth | center freq |
+| `vfo_bw_N` | int (Hz) | ≥ 100 | `12500` |
+| `vfo_fir_order_factor_N` | int | ≥ 2 | `2` |
+| `vfo_squelch_N` | int (dBFS) | Any integer | `-120` |
+| `vfo_squelch_mode_N` | string | `"Default"`, `"Auto"`, `"Manual"`, `"Auto Channel"` | `"Default"` |
+| `vfo_demod_N` | string | `"Default"`, `"None"`, `"FM"` | `"Default"` |
+| `vfo_iq_N` | string | `"Default"`, `"False"`, `"True"` | `"Default"` |
+
+### Remote control via HTTP (legacy)
+
+> **Note:** HTTP-based remote control via port 8081 is a legacy mechanism. The WebSocket interface above is the recommended approach and works in both GUI and headless modes without any extra server.
+
+The `settings.json` file can still be served and uploaded via miniserve on port 8081 when `en_remote_control: true` is set and the application is running in GUI mode. This option is disabled in headless mode.
+
+```bash
+# Download current settings
+curl http://KRAKEN_IP:8081/settings.json
+
+# Upload modified settings
 curl -F "path=@settings.json" http://KRAKEN_IP:8081/upload\?path\=/
 ```
 
-The DSP software would then notice the settings changes and apply them automatically.
+#### Middleware API (port 8042)
 
-#### Alternative via middleware
+The Node.js middleware also exposes a REST API for settings access:
 
-You can also use the middleware API to retrive and change the settings.json, the api is avaliable under `http://KRAKEN_IP:8042/settings` and works without enabling the remote mode mentioned in the software startup.
-
-Use a simple GET request to the endpoint to retrive the current settings in json format.
-To set a new settings file just send the json data as a POST request to the endpoint.
-
-A typical use would be the following:
-
-* GET request - retrive current settings
-* modify settings in json
-* POST request - save new settings to kraken
+```bash
+GET  http://KRAKEN_IP:8042/settings   # retrieve current settings JSON
+POST http://KRAKEN_IP:8042/settings   # send new settings JSON
+```
 
 
 ## For Contributors
